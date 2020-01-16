@@ -3,6 +3,7 @@ package ksyun
 import (
 	"github.com/KscSDK/ksc-sdk-go/ksc"
 	"github.com/KscSDK/ksc-sdk-go/ksc/utils"
+	"github.com/KscSDK/ksc-sdk-go/service/dedicated"
 	"github.com/KscSDK/ksc-sdk-go/service/ebs"
 	"github.com/KscSDK/ksc-sdk-go/service/eip"
 	"github.com/KscSDK/ksc-sdk-go/service/epc"
@@ -55,6 +56,7 @@ func (c *Config) Client() (*KsyunClient, error) {
 	client.epcconn = epc.SdkNew(cli, cfg, url)
 	client.ebsconn = ebs.SdkNew(cli, cfg, url)
 	client.mongodbconn = mongodb.SdkNew(cli, cfg, url)
+	client.dedicatedconn = dedicated.SdkNew(cli, cfg, url)
 
 	credentials := credentials.NewStaticCredentials(c.AccessKey, c.SecretKey, "")
 	client.ks3conn = s3.New(&aws.Config{
