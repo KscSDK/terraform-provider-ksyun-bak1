@@ -2,7 +2,7 @@
 provider "ksyun" {
   region = "cn-beijing-6"
 }
-
+/*
 resource "ksyun_instance" "default" {
   image_id="6e37ed46-61a2-4f0a-9f4a-dcdd0817917c"
   instance_type="N3.2B"
@@ -38,3 +38,35 @@ resource "ksyun_instance" "default" {
   user_data=""
   host_name="xuan-tf"
 }
+
+
+*/
+#dedicatedInstance
+resource "ksyun_instance" "default" {
+  image_id="6e37ed46-61a2-4f0a-9f4a-dcdd0817917c"
+  dedicated_host_id="bbdae3bf-d2a9-4c0e-bcb7-2263343ec810"
+  instance_configure{
+   memory_gb=20
+   v_c_p_u=20
+  }
+  instance_type="DVM1.NONE"
+  data_disk_gb=20
+  subnet_id="f6033a90-8c87-4a72-8cca-a7f61bf38c2b"
+  instance_password="Xuan663222"
+  charge_type="Daily"
+  purchase_time=1
+  security_group_id=["e10287dd-6702-4c45-b14e-3497f38b8f58"]
+  private_ip_address=""
+  instance_name="xuan-tf"
+  project_id=0
+  force_delete=true
+  data_disk =[
+  /* {
+     type=""
+     size=0
+     delete_with_instance=false
+   }*/
+ ]
+
+}
+

@@ -105,7 +105,7 @@ func resourceKsyunDedicatedHost() *schema.Resource {
 			},
 			"instances": {
 				Type:     schema.TypeSet,
-				Optional: true,
+				Computed: true,
 				Elem: &schema.Schema{
 					Type: schema.TypeString,
 				},
@@ -284,6 +284,9 @@ func resourceKsyunDedicatedHostDelete(d *schema.ResourceData, meta interface{}) 
 		logger.Debug(logger.AllFormat, action, readDedicatedHost, *resp, err)
 		if err != nil && notFoundError(err) {
 			return nil
+		}
+		if err1 != nil && inUseError(err1) {
+			return resource.RetryableError(err1)
 		}
 		if err != nil {
 			return resource.NonRetryableError(fmt.Errorf("error on reading dedicated host when deleting %q, %s", d.Id(), err))
