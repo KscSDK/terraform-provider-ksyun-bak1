@@ -2,7 +2,7 @@
 provider "ksyun" {
   region = "cn-beijing-6"
 }
-/*
+
 resource "ksyun_instance" "default" {
   image_id="6e37ed46-61a2-4f0a-9f4a-dcdd0817917c"
   instance_type="N3.2B"
@@ -40,8 +40,9 @@ resource "ksyun_instance" "default" {
 }
 
 
-*/
+
 #dedicatedInstance
+/*
 resource "ksyun_instance" "default" {
   image_id="6e37ed46-61a2-4f0a-9f4a-dcdd0817917c"
   dedicated_host_id="bbdae3bf-d2a9-4c0e-bcb7-2263343ec810"
@@ -61,12 +62,12 @@ resource "ksyun_instance" "default" {
   project_id=0
   force_delete=true
   data_disk =[
-  /* {
+   {
      type=""
      size=0
      delete_with_instance=false
-   }*/
+   }
  ]
-
 }
+*/
 
