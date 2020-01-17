@@ -1,3 +1,5 @@
 .idea/*
 bin/*
 terraform-provider-ksyun
+GNUmakefile
+scripts/*
