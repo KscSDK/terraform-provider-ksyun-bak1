@@ -176,6 +176,7 @@ var instanceKeys = map[string]bool{
 	"ChargeType":            true,
 	"SystemDisk":            true,
 	"KeySet":                true,
+	"DedicatedHostId":       true,
 }
 var instanceConfigureKeys = map[string]bool{
 	"VCPU":       true,
@@ -450,4 +451,20 @@ var mongodbShardInstanceShardNodeKeys = map[string]bool{
 	"Disk":          true,
 	"Iops":          true,
 	"InstanceClass": true,
+}
+var dedicatedHostKeys = map[string]bool{
+	"DedicatedHostName":    true,
+	"State":                true,
+	"TotalCpu":             true,
+	"OriCpu":               true,
+	"AvailableCpu":         true,
+	"TotalMemory":          true,
+	"AvailableMemory":      true,
+	"TotalDatadisk":        true,
+	"Instances":            true,
+	"CreateDate":           true,
+	"AvailabilityZone":     true,
+	"AvailabilityZoneName": true,
+	"Model":                true,
+	"ProjectId":            true,
 }

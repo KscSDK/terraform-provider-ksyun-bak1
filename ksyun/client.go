@@ -1,6 +1,7 @@
 package ksyun
 
 import (
+	"github.com/KscSDK/ksc-sdk-go/service/dedicated"
 	"github.com/KscSDK/ksc-sdk-go/service/ebs"
 	"github.com/KscSDK/ksc-sdk-go/service/eip"
 	"github.com/KscSDK/ksc-sdk-go/service/epc"
@@ -33,4 +34,5 @@ type KsyunClient struct {
 	ebsconn       *ebs.Ebs
 	mongodbconn   *mongodb.Mongodb
 	ks3conn       *s3.S3
+	dedicatedconn *dedicated.Dedicated
 }

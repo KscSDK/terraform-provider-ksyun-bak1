@@ -62,6 +62,7 @@ func Provider() terraform.ResourceProvider {
 			"ksyun_epcs":                          dataSourceKsyunEpcs(),
 			"ksyun_volumes":                       dataSourceKsyunVolumes(),
 			"ksyun_mongodbs":                      dataSourceKsyunMongodbs(),
+			"ksyun_dedicated_hosts":               dataSourceKsyunDedicatedHosts(),
 		},
 		ResourcesMap: map[string]*schema.Resource{
 			"ksyun_eip":                       resourceKsyunEip(),
@@ -93,6 +94,7 @@ func Provider() terraform.ResourceProvider {
 			"ksyun_mongodb_security_rule":     resourceKsyunMongodbSecurityRule(),
 			"ksyun_volume":                    resourceKsyunVolume(),
 			"ksyun_volume_attach":             resourceKsyunVolumeAttach(),
+			"ksyun_dedicated_host":            resourceKsyunDedicatedHost(),
 		},
 		ConfigureFunc: providerConfigure,
 	}

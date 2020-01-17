@@ -32,7 +32,11 @@ func resourceKsyunInstance() *schema.Resource {
 				Type:     schema.TypeString,
 				Required: true,
 			},
-
+			"dedicated_host_id": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+			},
 			"instance_type": {
 				Type:     schema.TypeString,
 				Optional: true,
@@ -171,12 +175,14 @@ func resourceKsyunInstance() *schema.Resource {
 			},
 			"instance_configure": {
 				Type:     schema.TypeList,
+				Optional: true,
 				Computed: true,
 				MaxItems: 1,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"v_c_p_u": {
 							Type:     schema.TypeInt,
+							Optional: true,
 							Computed: true,
 						},
 						"g_p_u": {
@@ -185,6 +191,7 @@ func resourceKsyunInstance() *schema.Resource {
 						},
 						"memory_gb": {
 							Type:     schema.TypeInt,
+							Optional: true,
 							Computed: true,
 						},
 						"data_disk_gb": {
@@ -391,13 +398,21 @@ func resourceKsyunInstanceCreate(d *schema.ResourceData, meta interface{}) error
 	if v1, ok := d.GetOk("data_disk"); ok {
 		FlatternStructSlicePrefix(v1, &createReq, "DataDisk")
 	}
+	if dedicatedId, ok := d.GetOk("dedicated_host_id"); ok {
+		createReq["DedicatedHostId"] = dedicatedId
+		if v1, ok := d.GetOk("instance_configure"); ok {
+			FlatternStructPrefix(v1, &createReq, "InstanceConfigure")
+		} else {
+			return fmt.Errorf("error on creating dedicated instance:instanceconfigure is required")
+		}
+	}
 	action := "RunInstances"
 	logger.Debug(logger.ReqFormat, action, createReq)
 	resp, err = conn.RunInstances(&createReq)
+	logger.Debug(logger.AllFormat, action, createReq, *resp, err)
 	if err != nil {
 		return fmt.Errorf("error on creating Instance: %s", err)
 	}
-	logger.Debug(logger.RespFormat, action, createReq, *resp)
 	if resp != nil {
 		instances := (*resp)["InstancesSet"].([]interface{})
 		if len(instances) == 0 {
@@ -528,10 +543,10 @@ func resourceKsyunInstanceRead(d *schema.ResourceData, meta interface{}) error {
 		action := "DescribeNetworkInterfaces"
 		logger.Debug(logger.ReqFormat, action, readReq)
 		resp, err := vpcConn.DescribeNetworkInterfaces(&readReq)
+		logger.Debug(logger.AllFormat, action, readReq, *resp, err)
 		if err != nil {
 			return fmt.Errorf("error on reading Instance %q, %s", d.Id(), err)
 		}
-		logger.Debug(logger.AllFormat, action, readReq, *resp, err)
 		itemset, ok := (*resp)["NetworkInterfaceSet"]
 		items, ok := itemset.([]interface{})
 		if !ok || len(items) == 0 {
@@ -571,11 +586,57 @@ func resourceKsyunInstanceRead(d *schema.ResourceData, meta interface{}) error {
 
 func resourceKsyunInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
 	conn := meta.(*KsyunClient).kecconn
+	dedicatedconn := meta.(*KsyunClient).dedicatedconn
 	d.Partial(true)
 	imageUpdate := false
 	updateReq := make(map[string]interface{})
 	updateReq["InstanceId"] = d.Id()
-
+	//dedicated instance migrate
+	if d.HasChange("dedicated_host_id") && !d.IsNewResource() {
+		old, _ := d.GetChange("instance_state")
+		instanceStateOld, ok := old.([]interface{})
+		var oldStateName string
+		if ok {
+			stateOld := instanceStateOld[0].(map[string]interface{})
+			oldStateName = stateOld["name"].(string)
+		} else {
+			return fmt.Errorf("no state get")
+		}
+		updateReq["DedicatedHostId"] = d.Get("dedicated_host_id")
+		action := "InstanceMigrate"
+		logger.Debug(logger.ReqFormat, action, updateReq)
+		resp, err := dedicatedconn.InstanceMigrate(&updateReq)
+		logger.Debug(logger.AllFormat, action, updateReq, *resp, err)
+		if err != nil {
+			return fmt.Errorf("error on instance migrate, %s", err)
+		}
+		for i := 0; i < 14; i++ {
+			_, stateName, err := getInstanceState(d.Id(), conn)
+			if err != nil || stateName == "" {
+				return fmt.Errorf("error on instance migrate when get state %q, %s", d.Id(), err)
+			}
+			if stateName != oldStateName {
+				break
+			}
+			time.Sleep(time.Second * time.Duration(i+1))
+			if i == 14 {
+				return fmt.Errorf("error on instance migrate when waiting state change %q, %s", d.Id(), err)
+			}
+		}
+		stateConf := &resource.StateChangeConf{
+			Pending:    []string{statusPending},
+			Target:     []string{oldStateName},
+			Refresh:    instanceStateRefreshFunc(conn, d.Id(), []string{oldStateName}),
+			Timeout:    d.Timeout(schema.TimeoutUpdate),
+			Delay:      3 * time.Second,
+			MinTimeout: 2 * time.Second,
+		}
+		if _, err = stateConf.WaitForState(); err != nil {
+			return fmt.Errorf("error on instance migrate when waiting state change %q, %s", d.Id(), err)
+		}
+		d.SetPartial("dedicated_host_id")
+		logger.DebugInfo("dedicated instance(%s) migrate success", d.Id())
+	}
 	//ModifyInstanceAttribute instancename
 	attributeNameUpdate := false
 	updateInstanceAttributes := []string{
@@ -591,10 +652,11 @@ func resourceKsyunInstanceUpdate(d *schema.ResourceData, meta interface{}) error
 		action := "ModifyInstanceAttribute"
 		logger.Debug(logger.ReqFormat, action, updateReq)
 		resp, err := conn.ModifyInstanceAttribute(&updateReq)
+		logger.Debug(logger.AllFormat, action, updateReq, *resp, err)
 		if err != nil {
 			return fmt.Errorf("error on updating  instance name, %s", err)
 		}
-		logger.Debug(logger.AllFormat, action, updateReq, *resp, err)
+
 		for _, v := range updateInstanceAttributes {
 			d.SetPartial(v)
 		}
@@ -783,10 +845,10 @@ func resourceKsyunInstanceUpdate(d *schema.ResourceData, meta interface{}) error
 		action := "ModifyInstanceAttribute"
 		logger.Debug(logger.ReqFormat, action, updateReq3)
 		resp, err := conn.ModifyInstanceAttribute(&updateReq3)
+		logger.Debug(logger.AllFormat, action, updateReq3, *resp, err)
 		if err != nil {
 			return fmt.Errorf("error on updating  instance password, %s", err)
 		}
-		logger.Debug(logger.RespFormat, action, updateReq3, *resp)
 		stateConf := &resource.StateChangeConf{
 			Pending:    []string{statusPending},
 			Target:     []string{"updating_password"},
@@ -830,10 +892,11 @@ func resourceKsyunInstanceUpdate(d *schema.ResourceData, meta interface{}) error
 		action := "ModifyInstanceAttribute"
 		logger.Debug(logger.ReqFormat, action, updateReq4)
 		resp, err := conn.ModifyInstanceAttribute(&updateReq4)
+		logger.Debug(logger.AllFormat, action, updateReq4, *resp, err)
 		if err != nil {
 			return fmt.Errorf("error on updating  instance host_name, %s", err)
 		}
-		logger.Debug(logger.RespFormat, action, updateReq4, *resp)
+
 		for _, v := range updatedAttributeHostName {
 			d.SetPartial(v)
 		}
@@ -847,10 +910,11 @@ func resourceKsyunInstanceUpdate(d *schema.ResourceData, meta interface{}) error
 		action := "StartInstances"
 		logger.Debug(logger.ReqFormat, action, updateReq1)
 		resp, err := conn.StartInstances(&updateReq1) //sync
+		logger.Debug(logger.AllFormat, action, updateReq1, *resp, err)
 		if err != nil {
 			return fmt.Errorf("error on RebootInstances instance(%v) %s", d.Id(), err)
 		}
-		logger.Debug(logger.RespFormat, action, updateReq1, *resp)
+
 		stateConf := &resource.StateChangeConf{
 			Pending:    []string{statusPending},
 			Target:     []string{"active"},
@@ -1131,32 +1195,10 @@ func resourceKsyunInstanceDelete(d *schema.ResourceData, meta interface{}) error
 }
 func instanceStateRefreshFunc(client *kec.Kec, instanceId string, target []string) resource.StateRefreshFunc {
 	return func() (interface{}, string, error) {
-		req := map[string]interface{}{"InstanceId.1": instanceId}
-		action := "DescribeInstances"
-		logger.Debug(logger.ReqFormat, action, req)
-		resp, err := client.DescribeInstances(&req)
+		resp, state, err := getInstanceState(instanceId, client)
 		if err != nil {
 			return nil, "", err
 		}
-		logger.Debug(logger.AllFormat, action, req, *resp, err)
-		itemset, ok := (*resp)["InstancesSet"]
-		items, ok := itemset.([]interface{})
-		if !ok || len(items) == 0 {
-			return nil, "", fmt.Errorf("no instance set get")
-		}
-		item, ok1 := items[0].(map[string]interface{})
-		if !ok1 {
-			return nil, "", fmt.Errorf("no instance set get")
-		}
-		instanceState, ok2 := item["InstanceState"]
-		if !ok2 {
-			return nil, "", fmt.Errorf("no instance state get")
-		}
-		instancestate, ok3 := instanceState.(map[string]interface{})
-		if !ok3 {
-			return nil, "", fmt.Errorf("no instance state get")
-		}
-		state := strings.ToLower(instancestate["Name"].(string))
 		for k, v := range target {
 			if v == state {
 				return resp, state, nil
@@ -1171,29 +1213,10 @@ func instanceStateRefreshFunc(client *kec.Kec, instanceId string, target []strin
 
 func instanceStateRefreshForReinstallFunc(client *kec.Kec, instanceId string, target []string) resource.StateRefreshFunc {
 	return func() (interface{}, string, error) {
-		req := map[string]interface{}{"InstanceId.1": instanceId}
-		resp, err := client.DescribeInstances(&req)
+		resp, state, err := getInstanceState(instanceId, client)
 		if err != nil {
 			return nil, "", err
 		}
-		itemset, ok := (*resp)["InstancesSet"]
-		items, ok := itemset.([]interface{})
-		if !ok || len(items) == 0 {
-			return nil, "", fmt.Errorf("no instance set get")
-		}
-		item, ok1 := items[0].(map[string]interface{})
-		if !ok1 {
-			return nil, "", fmt.Errorf("no instance set get")
-		}
-		instanceState, ok2 := item["InstanceState"]
-		if !ok2 {
-			return nil, "", fmt.Errorf("no instance state get")
-		}
-		instancestate, ok3 := instanceState.(map[string]interface{})
-		if !ok3 {
-			return nil, "", fmt.Errorf("no instance state get")
-		}
-		state := strings.ToLower(instancestate["Name"].(string))
 		if state == "stopped" {
 			return nil, "", fmt.Errorf("instance restart error")
 		}
@@ -1211,32 +1234,10 @@ func instanceStateRefreshForReinstallFunc(client *kec.Kec, instanceId string, ta
 
 func instanceStateRefreshForCreateFunc(client *kec.Kec, instanceId string, target []string) resource.StateRefreshFunc {
 	return func() (interface{}, string, error) {
-		req := map[string]interface{}{"InstanceId.1": instanceId}
-		action := "DescribeInstances"
-		logger.Debug(logger.ReqFormat, action, req)
-		resp, err := client.DescribeInstances(&req)
+		resp, state, err := getInstanceState(instanceId, client)
 		if err != nil {
 			return nil, "", err
 		}
-		logger.Debug(logger.RespFormat, action, req, *resp)
-		itemset, ok := (*resp)["InstancesSet"]
-		items, ok := itemset.([]interface{})
-		if !ok || len(items) == 0 {
-			return nil, "", fmt.Errorf("no instance set get")
-		}
-		item, ok1 := items[0].(map[string]interface{})
-		if !ok1 {
-			return nil, "", fmt.Errorf("no instance set get")
-		}
-		instanceState, ok2 := item["InstanceState"]
-		if !ok2 {
-			return nil, "", fmt.Errorf("no instance state get")
-		}
-		instancestate, ok3 := instanceState.(map[string]interface{})
-		if !ok3 {
-			return nil, "", fmt.Errorf("no instance state get")
-		}
-		state := strings.ToLower(instancestate["Name"].(string))
 		if state == "error" {
 			return nil, "", fmt.Errorf("instance create error")
 		}
@@ -1252,7 +1253,36 @@ func instanceStateRefreshForCreateFunc(client *kec.Kec, instanceId string, targe
 		return resp, state, nil
 	}
 }
+func getInstanceState(instanceId string, client *kec.Kec) (*map[string]interface{}, string, error) {
+	req := map[string]interface{}{"InstanceId.1": instanceId}
+	action := "DescribeInstances"
+	logger.Debug(logger.ReqFormat, action, req)
+	resp, err := client.DescribeInstances(&req)
+	if err != nil {
+		return resp, "", err
+	}
+	logger.Debug(logger.RespFormat, action, req, *resp)
+	itemset, ok := (*resp)["InstancesSet"]
+	items, ok := itemset.([]interface{})
+	if !ok || len(items) == 0 {
+		return resp, "", fmt.Errorf("no instance set get")
+	}
+	item, ok1 := items[0].(map[string]interface{})
+	if !ok1 {
+		return resp, "", fmt.Errorf("no instance set get")
+	}
+	instanceState, ok2 := item["InstanceState"]
+	if !ok2 {
+		return resp, "", fmt.Errorf("no instance state get")
+	}
+	instancestate, ok3 := instanceState.(map[string]interface{})
+	if !ok3 {
+		return resp, "", fmt.Errorf("no instance state get")
+	}
+	state := strings.ToLower(instancestate["Name"].(string))
+	return resp, state, nil
 
+}
 func instanceDetachKey(instanceId string, keyIds []interface{}, conn *kec.Kec) error {
 	req := make(map[string]interface{}, 0)
 	req["InstanceId.1"] = fmt.Sprintf("%v", instanceId)
