@@ -109,6 +109,10 @@ func resourceKsyunListener() *schema.Resource {
 							Type:     schema.TypeString,
 							Computed: true,
 						},
+						"host_name": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
 					},
 				},
 				Computed: true,
@@ -342,7 +346,7 @@ func resourceKsyunListenerDelete(d *schema.ResourceData, m interface{}) error {
 		}
 		return nil
 	*/
-	return resource.Retry(5*time.Minute, func() *resource.RetryError {
+	return resource.Retry(25*time.Minute, func() *resource.RetryError {
 		action := "DeleteListeners"
 		logger.Debug(logger.ReqFormat, action, req)
 		resp, err1 := slbconn.DeleteListeners(&req)
